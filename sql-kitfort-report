@@ -1,0 +1,202 @@
+/* Сначала создаётся два представления, первое - с UNION'ed 
+данными из таблиц по ЯД и Inst(Facebook).
+Второе - далее по тексту. */
+WITH yd_inst AS (
+  SELECT 
+    date, 
+    CampaignId AS campaign_id, 
+    CampaignName AS campaign_type, 
+    'yandex' AS source, 
+    'cpc' AS medium, 
+    CAST(adgroupid AS STRING) AS adgroupid, 
+    REGEXP_REPLACE(
+      REGEXP_EXTRACT(
+        AdGroupName, r "[KTКТ]{1,2}-\d*"
+      ), 
+      "КТ", 
+      "KT"
+    ) AS artikul, 
+    REGEXP_EXTRACT(AdGroupName, r "\d{2,4}") AS artikul_number, 
+    SUM(clicks) AS clicks, 
+    SUM(impressions) AS impressions, 
+    SUM(
+      CAST(cost AS FLOAT64)
+    ) AS cost 
+  FROM 
+    `kitfort.Meta.yandex_direct_ad_device_stat_kitfort_rw` 
+  GROUP BY 
+    date, 
+    CampaignId, 
+    CampaignName, 
+    adgroupid, 
+    artikul, 
+    artikul_number 
+  UNION ALL 
+  SELECT 
+    date_start AS date, 
+    campaign_id AS campaign_id, 
+    REGEXP_EXTRACT(campaign_name, r "\A[А-я ]*") AS campaign_type, 
+    'instagram' AS source, 
+    'cpc' AS medium, 
+    CAST(adset_id AS STRING) AS adgroupid, 
+    REGEXP_EXTRACT(
+      adset_name, r "[KTКТ]{1,2}-\d*"
+    ) AS artikul, 
+    REGEXP_EXTRACT(adset_name, r "\d{2,4}") AS artikul_number, 
+    SUM(clicks) AS clicks, 
+    SUM(impressions) AS impressions, 
+    SUM(spend) AS cost 
+  FROM 
+    `kitfort.Meta.facebook_ads_ad_stat_219127926195279` 
+  WHERE 
+    date_start >= "2020-09-17" 
+  GROUP BY 
+    date, 
+    campaign_id, 
+    source, 
+    campaign_name, 
+    adset_id, 
+    artikul, 
+    artikul_number 
+  ORDER BY 
+    date
+), 
+---
+
+/* Второе представление создаётся из GA, тут мы по тем же группировкам
+получаем метрики сессий и считаем хиты 
+При этом запросы по source 'yandex' и 'instagram' разделены, т.к.
+регулярные выражения для них отличаются - adgroupid берётся с разных мест 
+utm-метки */
+ga AS (
+  SELECT 
+    date, 
+    CAST(
+      REGEXP_REPLACE(
+        REGEXP_EXTRACT(adContent, r "_\d+_"), 
+        "_", 
+        ""
+      ) AS STRING
+    ) AS adgroupid, 
+    SUM(bounces) AS bounces, 
+    SUM(sessions) AS sessions, 
+    SUM(bounces)/ SUM(sessions) AS bounce_rate, 
+    AVG(sessionDuration) AS AvgSessionDuration, 
+    AVG(pageviews) AS pageviews, 
+    COALESCE(SUM(goal1Completions), 0) AS to_partners,
+    COALESCE(SUM(goal2Completions), 0) AS DNS,
+    COALESCE(SUM(goal3Completions), 0) AS Citilink,
+    COALESCE(SUM(goal4Completions), 0) AS MVideo,
+    COALESCE(SUM(goal5Completions), 0) AS Ozon,
+    COALESCE(SUM(goal6Completions), 0) AS OnlineTrade,
+    COALESCE(SUM(goal7Completions), 0) AS Wildberries,
+    COALESCE(SUM(goal8Completions), 0) AS Eldorado,
+    COALESCE(SUM(goal9Completions), 0) AS Holodilnik,
+    COALESCE(SUM(goal10Completions), 0) AS Beru,
+    COALESCE(SUM(goal11Completions), 0) AS XXIVek,
+    COALESCE(SUM(goal12Completions), 0) AS Techport,
+    COALESCE(SUM(goal13Completions), 0) AS YM
+  FROM 
+    `kitfort.Meta.google_analytics_ad_content_227727830_meta_2020*` 
+  WHERE 
+    source = 'yandex' 
+    AND medium = 'cpc' 
+    AND date >= '2020-09-17' 
+  GROUP BY 
+    date, 
+    source, 
+    medium, 
+    adgroupid 
+  UNION ALL 
+  SELECT 
+    date, 
+    CAST(
+      REGEXP_REPLACE(
+        REGEXP_EXTRACT(adContent, r "\A\d*"), 
+        "_", 
+        ""
+      ) AS STRING
+    ) AS adgroupid, 
+    SUM(bounces) AS bounces, 
+    SUM(sessions) AS sessions, 
+    SUM(bounces)/ SUM(sessions) AS bounce_rate, 
+    AVG(sessionDuration) AS AvgSessionDuration, 
+    AVG(pageviews) AS pageviews, 
+    COALESCE(SUM(goal1Completions), 0) AS to_partners,
+    COALESCE(SUM(goal2Completions), 0) AS DNS,
+    COALESCE(SUM(goal3Completions), 0) AS Citilink,
+    COALESCE(SUM(goal4Completions), 0) AS MVideo,
+    COALESCE(SUM(goal5Completions), 0) AS Ozon,
+    COALESCE(SUM(goal6Completions), 0) AS OnlineTrade,
+    COALESCE(SUM(goal7Completions), 0) AS Wildberries,
+    COALESCE(SUM(goal8Completions), 0) AS Eldorado,
+    COALESCE(SUM(goal9Completions), 0) AS Holodilnik,
+    COALESCE(SUM(goal10Completions), 0) AS Beru,
+    COALESCE(SUM(goal11Completions), 0) AS XXIVek,
+    COALESCE(SUM(goal12Completions), 0) AS Techport,
+    COALESCE(SUM(goal13Completions), 0) AS YM
+  FROM 
+    `kitfort.Meta.google_analytics_ad_content_227727830_meta_2020*` 
+  WHERE 
+    source = 'instagram' 
+    AND medium = 'cpc' 
+    AND date >= '2020-09-17' 
+  GROUP BY 
+    date, 
+    source, 
+    medium, 
+    adgroupid 
+  ORDER BY 
+    date
+) 
+---
+
+/* Теперь джойним два представления по дате и adgroupid, который при этом не выводим,
+потому что заказчику нужно разделение только по артикулу в рамках даты и кампании, но не по 
+adgroupid, которых в этой комбинации может быть несколько. Метрики складываем. */
+SELECT 
+  yd_inst.date, 
+  yd_inst.source, 
+  yd_inst.medium, 
+  yd_inst.campaign_id, 
+  yd_inst.campaign_type, 
+  yd_inst.artikul, 
+  SUM(yd_inst.impressions) AS impressions, 
+  SUM(yd_inst.clicks) AS clicks, 
+  SUM(yd_inst.clicks)/ NULLIF(
+  SUM(yd_inst.clicks)/NULLIF(SUM(yd_inst.impressions), 0) AS CTR,
+  SUM(yd_inst.cost)/NULLIF(SUM(yd_inst.clicks), 0)*1.2 AS CPC,
+  SUM(yd_inst.cost)* 1.2 AS cost, 
+  AVG(ga.bounce_rate) AS bounce_rate, 
+  AVG(ga.AvgSessionDuration) AS AvgSessionDuration, 
+  AVG(ga.pageviews) AS pageviews, 
+  SUM(ga.to_partners) AS to_partners, 
+  SUM(ga.DNS) AS DNS, 
+  SUM(ga.Citilink) AS Citilink, 
+  SUM(ga.MVideo) AS Mvideo, 
+  SUM(ga.Ozon) AS Ozon, 
+  SUM(ga.OnlineTrade) AS OnlineTrade, 
+  SUM(ga.Wildberries) AS Wildberried, 
+  SUM(ga.Eldorado) AS Eldorado, 
+  SUM(ga.Holodilnik) AS Holodilnik, 
+  SUM(ga.Beru) AS Beru, 
+  SUM(ga.XXIVek) AS XXIVek, 
+  SUM(ga.Techport) AS Techport, 
+  SUM(ga.YM) AS YM 
+FROM 
+  ga 
+---
+  RIGHT JOIN yd_inst ON yd_inst.date = ga.date 
+  AND yd_inst.adgroupid = ga.adgroupid ---
+GROUP BY 
+  yd_inst.date, 
+  yd_inst.source, 
+  yd_inst.medium, 
+  yd_inst.campaign_id, 
+  yd_inst.campaign_type, 
+  yd_inst.artikul 
+ORDER BY 
+  date, 
+  source, 
+  medium, 
+  artikul
